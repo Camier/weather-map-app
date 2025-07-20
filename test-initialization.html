@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test d'Initialisation - Météo Sud France</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background: #f0f2f5;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 4px solid;
+        }
+        .test-pass {
+            background: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
+        .test-fail {
+            background: #f8d7da;
+            border-color: #dc3545;
+            color: #721c24;
+        }
+        .test-pending {
+            background: #fff3cd;
+            border-color: #ffc107;
+            color: #856404;
+        }
+        .iframe-container {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: none;
+        }
+        .timestamp {
+            font-size: 0.9em;
+            color: #666;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .metrics {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 Test d'Initialisation - Météo Sud France</h1>
+        <p class="timestamp">Test démarré à: <span id="test-start-time"></span></p>
+        
+        <div class="test-result test-pending" id="test-1">
+            ⏳ Test 1: Chargement de l'application modular (consolidée)
+        </div>
+        
+        <div class="test-result test-pending" id="test-2">
+            ⏳ Test 2: Vérification de l'initialisation non-bloquante
+        </div>
+        
+        <div class="test-result test-pending" id="test-3">
+            ⏳ Test 3: Test de la gestion d'erreur réseau
+        </div>
+        
+        <div class="test-result test-pending" id="test-4">
+            ⏳ Test 4: Test de la version simplifiée de secours
+        </div>
+        
+        <div class="metrics" id="metrics" style="display: none;">
+            <h3>📊 Métriques de Performance</h3>
+            <div id="metrics-content"></div>
+        </div>
+        
+        <div>
+            <button onclick="runModularTest()">🧪 Tester Version Modulaire</button>
+            <button onclick="runSimpleTest()">🧪 Tester Version Simple</button>
+            <button onclick="runOfflineTest()">📵 Simuler Mode Hors Ligne</button>
+            <button onclick="clearTests()">🗑️ Reset Tests</button>
+        </div>
+        
+        <div class="iframe-container" id="app-container" style="display: none;">
+            <iframe id="test-frame" src=""></iframe>
+        </div>
+        
+        <div id="console-output" style="margin-top: 20px; padding: 10px; background: #000; color: #0f0; font-family: monospace; border-radius: 4px; display: none;">
+            <h4 style="color: white;">Console Output:</h4>
+            <div id="console-log"></div>
+        </div>
+    </div>
+
+    <script>
+        let testStartTime = Date.now();
+        let currentTest = null;
+        let testTimeout = null;
+        
+        document.getElementById('test-start-time').textContent = new Date().toLocaleString('fr-FR');
+        
+        function updateTest(testId, status, message) {
+            const element = document.getElementById(testId);
+            element.className = `test-result test-${status}`;
+            
+            const icon = status === 'pass' ? '✅' : status === 'fail' ? '❌' : '⏳';
+            const elapsed = Date.now() - testStartTime;
+            element.innerHTML = `${icon} ${message} <span class="timestamp">(${elapsed}ms)</span>`;
+        }
+        
+        function logToConsole(message) {
+            const consoleOutput = document.getElementById('console-output');
+            const consoleLog = document.getElementById('console-log');
+            consoleOutput.style.display = 'block';
+            consoleLog.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${message}</div>`;
+            consoleLog.scrollTop = consoleLog.scrollHeight;
+        }
+        
+        function runModularTest() {
+            clearTests();
+            testStartTime = Date.now();
+            currentTest = 'modular';
+            
+            updateTest('test-1', 'pending', 'Test 1: Chargement de l\'application modular...');
+            logToConsole('🚀 Démarrage du test version modulaire');
+            
+            const iframe = document.getElementById('test-frame');
+            const container = document.getElementById('app-container');
+            
+            container.style.display = 'block';
+            iframe.src = 'weather-map-modular.html';
+            
+            // Test timeout - should not need more than 10 seconds
+            testTimeout = setTimeout(() => {
+                updateTest('test-1', 'fail', 'Test 1: TIMEOUT - App pas initialisée dans les 10 secondes');
+                updateTest('test-2', 'fail', 'Test 2: Échec - timeout d\'initialisation');
+                logToConsole('❌ TIMEOUT: App non initialisée dans les 10 secondes');
+            }, 10000);
+            
+            // Monitor iframe loading
+            iframe.onload = () => {
+                logToConsole('📄 HTML chargé, vérification de l\'initialisation JavaScript...');
+                
+                setTimeout(() => {
+                    try {
+                        const iframeWindow = iframe.contentWindow;
+                        const app = iframeWindow.weatherApp;
+                        
+                        if (app && app.isInitialized) {
+                            clearTimeout(testTimeout);
+                            const elapsed = Date.now() - testStartTime;
+                            
+                            updateTest('test-1', 'pass', `Test 1: ✅ App chargée et initialisée (${elapsed}ms)`);
+                            updateTest('test-2', 'pass', 'Test 2: ✅ Initialisation non-bloquante confirmée');
+                            
+                            logToConsole(`✅ App initialisée avec succès en ${elapsed}ms`);
+                            logToConsole(`✅ Modules: Map=${!!app.mapController}, UI=${!!app.uiState}, Weather=${!!app.weatherService}`);
+                            
+                            // Show performance metrics
+                            if (app.getPerformanceMetrics) {
+                                const metrics = app.getPerformanceMetrics();
+                                showMetrics(metrics);
+                                logToConsole(`📊 Métriques: ${JSON.stringify(metrics, null, 2)}`);
+                            }
+                            
+                            // Test weather data loading
+                            setTimeout(() => {
+                                checkWeatherDataLoading(iframeWindow);
+                            }, 2000);
+                            
+                        } else {
+                            logToConsole('⚠️ App trouvée mais pas encore initialisée, attente...');
+                            setTimeout(arguments.callee, 500);
+                        }
+                    } catch (error) {
+                        logToConsole(`❌ Erreur lors de l'accès à l'app: ${error.message}`);
+                        setTimeout(arguments.callee, 500);
+                    }
+                }, 1000);
+            };
+        }
+        
+        function checkWeatherDataLoading(iframeWindow) {
+            try {
+                const app = iframeWindow.weatherApp;
+                const uiState = app.uiState;
+                
+                if (uiState && uiState.weatherData) {
+                    updateTest('test-3', 'pass', 'Test 3: ✅ Données météo chargées avec succès');
+                    logToConsole('✅ Données météo disponibles');
+                } else {
+                    updateTest('test-3', 'pending', 'Test 3: ⏳ Données météo en cours de chargement...');
+                    logToConsole('⏳ Données météo encore en chargement...');
+                    
+                    // Check again in 3 seconds
+                    setTimeout(() => {
+                        if (uiState && uiState.weatherData) {
+                            updateTest('test-3', 'pass', 'Test 3: ✅ Données météo chargées (avec délai)');
+                            logToConsole('✅ Données météo finalement disponibles');
+                        } else {
+                            updateTest('test-3', 'fail', 'Test 3: ⚠️ Données météo non disponibles (normal si hors ligne)');
+                            logToConsole('⚠️ Données météo non disponibles - app fonctionne quand même');
+                        }
+                    }, 3000);
+                }
+            } catch (error) {
+                updateTest('test-3', 'fail', `Test 3: ❌ Erreur: ${error.message}`);
+                logToConsole(`❌ Erreur test données météo: ${error.message}`);
+            }
+        }
+        
+        function runSimpleTest() {
+            clearTests();
+            testStartTime = Date.now();
+            currentTest = 'simple';
+            
+            updateTest('test-4', 'pending', 'Test 4: Chargement de la version simple...');
+            logToConsole('🚀 Démarrage du test version simple');
+            
+            const iframe = document.getElementById('test-frame');
+            const container = document.getElementById('app-container');
+            
+            container.style.display = 'block';
+            iframe.src = 'weather-map-simple.html';
+            
+            testTimeout = setTimeout(() => {
+                updateTest('test-4', 'fail', 'Test 4: TIMEOUT - Version simple pas chargée');
+                logToConsole('❌ TIMEOUT: Version simple non chargée');
+            }, 8000);
+            
+            iframe.onload = () => {
+                setTimeout(() => {
+                    try {
+                        const iframeWindow = iframe.contentWindow;
+                        const app = iframeWindow.weatherApp;
+                        
+                        if (app && app.isInitialized) {
+                            clearTimeout(testTimeout);
+                            const elapsed = Date.now() - testStartTime;
+                            
+                            updateTest('test-4', 'pass', `Test 4: ✅ Version simple chargée (${elapsed}ms)`);
+                            logToConsole(`✅ Version simple initialisée en ${elapsed}ms`);
+                        } else {
+                            setTimeout(arguments.callee, 500);
+                        }
+                    } catch (error) {
+                        logToConsole(`❌ Erreur version simple: ${error.message}`);
+                        setTimeout(arguments.callee, 500);
+                    }
+                }, 1000);
+            };
+        }
+        
+        function runOfflineTest() {
+            logToConsole('📵 Test mode hors ligne non implémenté dans ce test');
+            alert('Test mode hors ligne: Désactivez votre connexion internet et relancez le test modular');
+        }
+        
+        function showMetrics(metrics) {
+            const metricsDiv = document.getElementById('metrics');
+            const content = document.getElementById('metrics-content');
+            
+            content.innerHTML = `
+                <div><strong>Temps d'initialisation total:</strong> ${metrics.totalInitTime}ms</div>
+                <div><strong>Chargement météo:</strong> ${metrics.weatherLoadTime || 'En cours...'}ms</div>
+                <div><strong>État de l'interface:</strong> ${metrics.uiState?.isInitialized ? 'Prête' : 'En cours'}</div>
+                <div><strong>Connexion réseau:</strong> ${metrics.weatherServiceStats?.connectionStatus || 'Inconnue'}</div>
+                <div><strong>Fiabilité service météo:</strong> ${metrics.weatherServiceStats?.reliability?.successCount || 0}/${metrics.weatherServiceStats?.reliability?.totalRequests || 0}</div>
+            `;
+            
+            metricsDiv.style.display = 'block';
+        }
+        
+        function clearTests() {
+            if (testTimeout) {
+                clearTimeout(testTimeout);
+                testTimeout = null;
+            }
+            
+            ['test-1', 'test-2', 'test-3', 'test-4'].forEach(id => {
+                updateTest(id, 'pending', document.getElementById(id).textContent.split('⏳')[1] || 'Test en attente...');
+            });
+            
+            document.getElementById('metrics').style.display = 'none';
+            document.getElementById('console-output').style.display = 'none';
+            document.getElementById('console-log').innerHTML = '';
+            document.getElementById('app-container').style.display = 'none';
+        }
+        
+        // Auto-run modular test on page load
+        setTimeout(runModularTest, 1000);
+    </script>
+</body>
+</html>

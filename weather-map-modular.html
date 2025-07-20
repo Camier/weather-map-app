@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Carte Météo - Architecture Modulaire</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            overflow: hidden; 
+            touch-action: pan-x pan-y;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        
+        #map { 
+            height: 100vh; 
+            width: 100vw; 
+            z-index: 10; 
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+        
+        /* Mobile-first responsive design - same as original */
+        .mobile-panel {
+            position: fixed;
+            z-index: 20;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        
+        .mobile-header {
+            top: env(safe-area-inset-top, 10px);
+            left: 10px;
+            right: 10px;
+            padding: 12px;
+            max-height: 30vh;
+            overflow-y: auto;
+        }
+        
+        .mobile-controls {
+            bottom: env(safe-area-inset-bottom, 10px);
+            left: 10px;
+            right: 10px;
+            padding: 12px;
+        }
+        
+        /* Touch-friendly controls */
+        .touch-button {
+            min-height: 44px;
+            min-width: 44px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .touch-button:active {
+            transform: scale(0.95);
+        }
+        
+        /* Improved touch targets */
+        .carte-meteo {
+            min-height: 44px;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 8px;
+            transition: all 0.2s;
+            touch-action: manipulation;
+        }
+        
+        .carte-meteo:active {
+            transform: scale(0.98);
+            background-color: #f3f4f6;
+        }
+        
+        /* Mobile panels */
+        .mobile-side-panel {
+            position: fixed;
+            top: 0;
+            right: -100%;
+            width: 85vw;
+            max-width: 400px;
+            height: 100vh;
+            background: white;
+            z-index: 30;
+            transition: right 0.3s ease;
+            overflow-y: auto;
+            padding: env(safe-area-inset-top, 20px) 20px 20px;
+        }
+        
+        .mobile-side-panel.open {
+            right: 0;
+        }
+        
+        .mobile-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.5);
+            z-index: 25;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .mobile-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        /* Data reliability indicators */
+        .data-warning {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border: 2px solid #f59e0b;
+            color: #92400e;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        .data-error {
+            background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+            border: 2px solid #ef4444;
+            color: #dc2626;
+        }
+        
+        .data-success {
+            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+            border: 2px solid #10b981;
+            color: #059669;
+        }
+        
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            color: white;
+        }
+        
+        /* Connection status */
+        .connection-status {
+            position: fixed;
+            top: env(safe-area-inset-top, 10px);
+            left: 10px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 600;
+            z-index: 35;
+        }
+        
+        .connection-status.online {
+            background: #10b981;
+            color: white;
+        }
+        
+        .connection-status.offline {
+            background: #ef4444;
+            color: white;
+            animation: pulse 1s infinite;
+        }
+        
+        /* Responsive text sizing */
+        @media (max-width: 375px) {
+            .touch-button {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+            
+            .mobile-header h1 {
+                font-size: 18px;
+            }
+        }
+        
+        /* Landscape mobile adjustments */
+        @media (max-height: 500px) and (orientation: landscape) {
+            .mobile-header {
+                max-height: 25vh;
+            }
+            
+            .mobile-controls {
+                padding: 8px;
+            }
+        }
+        
+        /* Desktop overrides */
+        @media (min-width: 768px) {
+            .mobile-panel {
+                position: absolute;
+            }
+            
+            .mobile-header {
+                top: 20px;
+                left: 20px;
+                right: 20px;
+                max-height: none;
+            }
+            
+            .mobile-controls {
+                bottom: 20px;
+                left: 20px;
+                right: 20px;
+            }
+            
+            .mobile-side-panel {
+                position: absolute;
+                right: 20px;
+                top: 120px;
+                width: 350px;
+                height: auto;
+                max-height: 70vh;
+                padding: 20px;
+            }
+        }
+        
+        /* Module initialization indicator */
+        .module-status {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            z-index: 60;
+        }
+        
+        .module-status.ready {
+            background: rgba(34, 197, 94, 0.8);
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div id="map"></div>
+    
+    <!-- Connection Status -->
+    <div id="connection-status" class="connection-status online">●</div>
+    
+    <!-- Module Status -->
+    <div id="module-status" class="module-status">⚡ Initializing...</div>
+
+    <!-- Main Header Panel -->
+    <div class="mobile-panel mobile-header">
+        <h1 class="text-lg md:text-xl font-bold text-gray-800 text-center mb-2">
+            🌦️ Météo Sud France - Modulaire
+        </h1>
+        
+        <!-- Data Status Warning -->
+        <div id="data-status" class="data-warning hidden">
+            ⚠️ Vérification des données météo...
+        </div>
+        
+        <!-- Quick Stats -->
+        <div class="flex justify-center gap-4 mb-3 text-center">
+            <div>
+                <div class="text-2xl font-bold text-green-600" id="villes-sans-pluie">0</div>
+                <div class="text-xs text-gray-600">au sec</div>
+            </div>
+            <div>
+                <div class="text-2xl font-bold text-amber-600" id="temperature-max">--°</div>
+                <div class="text-xs text-gray-600">max</div>
+            </div>
+            <div>
+                <div class="text-2xl font-bold text-cyan-600" id="activites-ideales">0</div>
+                <div class="text-xs text-gray-600">idéal</div>
+            </div>
+        </div>
+        
+        <!-- Date Slider -->
+        <div class="mb-2">
+            <label for="day-slider" class="text-sm font-medium text-gray-700 block text-center" id="date-label">Chargement...</label>
+            <input type="range" min="0" max="6" value="0" class="w-full cursor-pointer" id="day-slider" disabled>
+        </div>
+    </div>
+
+    <!-- Control Panel -->
+    <div class="mobile-panel mobile-controls">
+        <div class="grid grid-cols-2 gap-2">
+            <button id="btn-sans-pluie" class="touch-button bg-green-600 text-white hover:bg-green-700">
+                ☀️ Sec
+            </button>
+            <button id="btn-activites" class="touch-button bg-blue-600 text-white hover:bg-blue-700">
+                📍 Sites
+            </button>
+            <button id="btn-semaine" class="touch-button bg-purple-600 text-white hover:bg-purple-700">
+                📅 Semaine
+            </button>
+            <button id="btn-itineraire" class="touch-button bg-orange-600 text-white hover:bg-orange-700">
+                🗺️ Route
+            </button>
+        </div>
+    </div>
+
+    <!-- Mobile Overlay -->
+    <div id="mobile-overlay" class="mobile-overlay"></div>
+
+    <!-- Sites Panel (Mobile Slide-in) -->
+    <div id="panneau-activites" class="mobile-side-panel">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-bold text-lg">🗺️ Sites Naturels</h3>
+            <button id="fermer-activites" class="touch-button bg-gray-200 text-gray-700 p-2">×</button>
+        </div>
+        
+        <div class="mb-3">
+            <input type="text" id="recherche-spots" placeholder="🔍 Rechercher..." 
+                   class="w-full px-3 py-3 border rounded-lg text-sm focus:outline-none focus:border-blue-500">
+        </div>
+        
+        <div id="filtres-activites" class="flex flex-wrap gap-2 mb-3">
+            <button class="filtre-type touch-button bg-blue-100 text-blue-700 text-xs" data-type="cascade">💧</button>
+            <button class="filtre-type touch-button bg-red-100 text-red-700 text-xs" data-type="thermes">♨️</button>
+            <button class="filtre-type touch-button bg-cyan-100 text-cyan-700 text-xs" data-type="lac">🏊</button>
+            <button class="filtre-type touch-button bg-amber-100 text-amber-700 text-xs" data-type="plage">🏖️</button>
+            <button class="filtre-type touch-button bg-purple-100 text-purple-700 text-xs" data-type="gorges">🏔️</button>
+            <button class="filtre-type touch-button bg-gray-100 text-gray-700 text-xs" data-type="grotte">🕳️</button>
+            <button class="filtre-type touch-button bg-teal-100 text-teal-700 text-xs" data-type="piscine">💎</button>
+            <button class="filtre-type touch-button bg-pink-100 text-pink-700 text-xs" data-type="vue">👁️</button>
+            <button class="filtre-type touch-button bg-orange-100 text-orange-700 text-xs" data-type="canyon">🪂</button>
+        </div>
+        
+        <div id="liste-activites" class="space-y-2"></div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="overlay-chargement" class="loading-overlay">
+        <div class="text-center">
+            <div class="animate-spin w-8 h-8 border-4 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
+            <div id="texte-chargement" class="font-medium">Initialisation des modules...</div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+    <script type="module">
+        // Import CDN fallback system first
+        import CDNFallbackManager from './cdn-fallbacks.js';
+        
+        // Enhanced Service Worker for offline caching and performance
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw-enhanced.js')
+                .then(registration => {
+                    console.log('Enhanced SW registered:', registration);
+                    
+                    // Listen for updates
+                    registration.addEventListener('updatefound', () => {
+                        console.log('SW: Update found, new version available');
+                    });
+                })
+                .catch(error => console.log('SW registration failed:', error));
+        }
+        
+        // Initialize CDN fallbacks in background (optional)
+        try {
+            const cdnManager = new CDNFallbackManager();
+            cdnManager.initialize().catch(error => {
+                console.warn('CDN fallback initialization failed:', error);
+            });
+        } catch (error) {
+            console.warn('CDN fallback manager failed to load:', error);
+        }
+        
+        // Import and initialize the modular weather app
+        import WeatherApp from './weather-app.js';
+        
+        // Update module status
+        const moduleStatus = document.getElementById('module-status');
+        const updateModuleStatus = (message, isReady = false) => {
+            moduleStatus.textContent = message;
+            if (isReady) {
+                moduleStatus.classList.add('ready');
+            }
+        };
+        
+        // Configuration optimized for mobile/production use
+        const appConfig = {
+            isMobile: window.innerWidth < 768,
+            
+            // Detect mobile device more accurately
+            weatherOptions: {
+                timeout: /Mobi|Android/i.test(navigator.userAgent) ? 5000 : 8000, // Reduced timeouts
+                maxRetries: 1, // Faster startup
+                cacheDuration: 3600000 // 1 hour
+            },
+            
+            mapOptions: {
+                center: [43.7, 3.5],
+                zoom: /Mobi|Android/i.test(navigator.userAgent) ? 6 : 7,
+                clusterRadius: /Mobi|Android/i.test(navigator.userAgent) ? 40 : 50
+            },
+            
+            features: {
+                offlineMode: true,
+                weeklyStats: true,
+                routePlanning: true,
+                backgroundSync: 'serviceWorker' in navigator
+            }
+        };
+        
+        // Initialize application when DOM is ready
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                updateModuleStatus('🔧 Initializing modules...');
+                
+                // Initialize the weather app
+                const app = new WeatherApp(appConfig);
+                
+                // Make app globally available for debugging
+                window.weatherApp = app;
+                
+                // Set up global event listeners for app events
+                app.on('initializationFailed', (e) => {
+                    console.error('App initialization failed:', e.detail);
+                    updateModuleStatus('❌ Initialization failed');
+                });
+                
+                app.on('citySelected', (e) => {
+                    console.log('City selected:', e.detail.city.nom);
+                });
+                
+                app.on('activitySelected', (e) => {
+                    console.log('Activity selected:', e.detail.activity.nom);
+                });
+                
+                app.on('routeUpdated', (e) => {
+                    console.log('Route updated, length:', e.detail.route.length);
+                });
+                
+                app.on('connectionChanged', (e) => {
+                    const status = e.detail.isOnline ? 'online' : 'offline';
+                    console.log('Connection status:', status);
+                });
+                
+                // Wait for initialization to complete with better timeout handling
+                const checkInitialization = () => {
+                    if (app.isInitialized) {
+                        updateModuleStatus('✅ Modules ready', true);
+                        
+                        // Hide loading overlay immediately when app is ready
+                        const overlay = document.getElementById('overlay-chargement');
+                        if (overlay) {
+                            overlay.style.opacity = '0';
+                            setTimeout(() => overlay.style.display = 'none', 500);
+                        }
+                        
+                        // Log performance metrics
+                        const metrics = app.getPerformanceMetrics();
+                        console.log('WeatherApp Performance:', metrics);
+                        
+                        // Hide module status after 2 seconds
+                        setTimeout(() => {
+                            if (moduleStatus) {
+                                moduleStatus.style.opacity = '0';
+                                setTimeout(() => moduleStatus.style.display = 'none', 500);
+                            }
+                        }, 2000);
+                        
+                    } else {
+                        setTimeout(checkInitialization, 50); // Check more frequently
+                    }
+                };
+                
+                // Start checking with additional safety timeout
+                checkInitialization();
+                
+                // Safety timeout - force hide loading after 10 seconds regardless
+                setTimeout(() => {
+                    const overlay = document.getElementById('overlay-chargement');
+                    if (overlay && overlay.style.display !== 'none') {
+                        console.warn('Force hiding loading overlay after timeout');
+                        overlay.style.display = 'none';
+                        updateModuleStatus('⚠️ Loaded with timeout');
+                    }
+                }, 10000);
+                
+            } catch (error) {
+                console.error('Failed to initialize weather app:', error);
+                updateModuleStatus('❌ Module error');
+                
+                // Show error in UI
+                const dataStatus = document.getElementById('data-status');
+                if (dataStatus) {
+                    dataStatus.textContent = `❌ Erreur d'initialisation: ${error.message}`;
+                    dataStatus.classList.remove('hidden', 'data-warning', 'data-success');
+                    dataStatus.classList.add('data-error');
+                }
+                
+                // Hide loading overlay
+                document.getElementById('overlay-chargement').style.display = 'none';
+            }
+        });
+        
+        // Handle orientation changes for mobile
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => {
+                if (window.weatherApp && window.weatherApp.mapController) {
+                    window.weatherApp.mapController.invalidateSize();
+                }
+            }, 100);
+        });
+        
+        // Performance monitoring
+        window.addEventListener('load', () => {
+            console.log('Page loaded at:', Date.now());
+            
+            // Log performance metrics if Performance API is available
+            if ('performance' in window && performance.timing) {
+                const timing = performance.timing;
+                console.log('Performance Timing:', {
+                    domContentLoaded: timing.domContentLoadedEventEnd - timing.navigationStart,
+                    loadComplete: timing.loadEventEnd - timing.navigationStart,
+                    domReady: timing.domComplete - timing.navigationStart
+                });
+            }
+        });
+    </script>
+</body>
+</html>

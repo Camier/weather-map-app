@@ -1,0 +1,44 @@
+{
+  "name": "weather-map-app",
+  "version": "2.0.0",
+  "description": "Carte météo interactive pour le Sud de la France - Architecture modulaire",
+  "type": "module",
+  "main": "weather-app.js",
+  "scripts": {
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest --coverage",
+    "test:ui": "vitest --ui",
+    "dev": "python3 -m http.server 8082",
+    "build": "echo 'No build step needed for pure ES modules'",
+    "lint": "eslint *.js",
+    "start": "npm run dev"
+  },
+  "keywords": [
+    "weather",
+    "map",
+    "france",
+    "trip-planning",
+    "pwa",
+    "mobile-first"
+  ],
+  "author": "Miko",
+  "license": "MIT",
+  "devDependencies": {
+    "vitest": "^1.6.0",
+    "@vitest/ui": "^1.6.0",
+    "@vitest/coverage-v8": "^1.6.0",
+    "jsdom": "^24.1.0",
+    "eslint": "^8.57.0"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead",
+    "not IE 11"
+  ]
+}
