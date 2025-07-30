@@ -1040,6 +1040,340 @@ class MapController {
     }
     
     /**
+     * Enable spot creation mode
+     * @emits spotLocationSelected - When user clicks on map
+     */
+    enableSpotCreation() {
+        // Change cursor to crosshair
+        this.map.getContainer().style.cursor = 'crosshair';
+        
+        // Add temporary click handler
+        this.spotCreationHandler = (e) => {
+            this.emit('spotLocationSelected', {
+                lat: e.latlng.lat,
+                lon: e.latlng.lng
+            });
+            this.disableSpotCreation();
+        };
+        
+        this.map.once('click', this.spotCreationHandler);
+        
+        // Add visual feedback
+        const container = this.map.getContainer();
+        container.classList.add('spot-creation-mode');
+    }
+    
+    /**
+     * Disable spot creation mode
+     */
+    disableSpotCreation() {
+        this.map.getContainer().style.cursor = '';
+        this.map.getContainer().classList.remove('spot-creation-mode');
+        
+        if (this.spotCreationHandler) {
+            this.map.off('click', this.spotCreationHandler);
+            this.spotCreationHandler = null;
+        }
+    }
+    
+    /**
+     * Initialize custom spots layer
+     * @private
+     */
+    initializeCustomSpotsLayer() {
+        if (!this.customSpotsLayer) {
+            this.customSpotsLayer = L.layerGroup();
+            this.customSpotsLayer.addTo(this.map);
+            this.customSpotMarkers = new Map(); // Store marker references
+        }
+    }
+    
+    /**
+     * Add custom spot marker
+     * @param {Object} spot - Spot data
+     * @returns {L.Marker} Created marker
+     */
+    addCustomSpotMarker(spot) {
+        this.initializeCustomSpotsLayer();
+        
+        // Import spot types from spot-manager
+        const spotTypes = {
+            'warehouse': { icon: '🏭', color: '#6B7280' },
+            'urbex': { icon: '🏚️', color: '#92400E' },
+            'rooftop': { icon: '🏢', color: '#1E40AF' },
+            'swimming': { icon: '🏊', color: '#0891B2' },
+            'cliff-jump': { icon: '🪂', color: '#0369A1' },
+            'river': { icon: '💧', color: '#0E7490' },
+            'viewpoint': { icon: '👁️', color: '#7C3AED' },
+            'camping': { icon: '⛺', color: '#059669' },
+            'cave': { icon: '🕳️', color: '#451A03' },
+            'party': { icon: '🎉', color: '#E11D48' },
+            'bbq': { icon: '🔥', color: '#EA580C' },
+            'picnic': { icon: '🧺', color: '#CA8A04' },
+            'custom': { icon: '📍', color: '#DC2626' }
+        };
+        
+        const spotType = spotTypes[spot.type] || spotTypes.custom;
+        const markerSize = 36;
+        
+        // Create custom divIcon with pin shape
+        const markerHtml = `
+            <div class="custom-spot-marker" 
+              style="background: ${spotType.color}; 
+              width: ${markerSize}px; 
+              height: ${markerSize}px; 
+              border-radius: 50% 50% 50% 0;
+              transform: rotate(-45deg);
+              border: 3px solid white;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              position: relative;">
+              <span style="transform: rotate(45deg); font-size: 18px; color: white;">
+                ${spotType.icon}
+              </span>
+            </div>
+        `;
+        
+        const icon = L.divIcon({
+            html: markerHtml,
+            className: 'custom-div-icon',
+            iconSize: [markerSize, markerSize],
+            iconAnchor: [markerSize / 2, markerSize],
+            popupAnchor: [0, -markerSize]
+        });
+        
+        const marker = L.marker([spot.coordinates.lat, spot.coordinates.lon], { 
+            icon,
+            zIndexOffset: 1000 // Ensure custom spots appear above other markers
+        });
+        
+        // Create popup content
+        const popupContent = this.createCustomSpotPopup(spot);
+        marker.bindPopup(popupContent, {
+            maxWidth: 300,
+            className: 'custom-spot-popup'
+        });
+        
+        // Add click handler
+        marker.on('click', () => {
+            this.emit('customSpotClicked', { spot });
+        });
+        
+        // Add to layer and store reference
+        marker.addTo(this.customSpotsLayer);
+        this.customSpotMarkers.set(spot.id, marker);
+        
+        return marker;
+    }
+    
+    /**
+     * Create custom spot popup HTML
+     * @private
+     * @param {Object} spot - Spot data
+     * @returns {string} HTML content
+     */
+    createCustomSpotPopup(spot) {
+        const spotTypes = {
+            'warehouse': { label: 'Entrepôt' },
+            'urbex': { label: 'Urbex' },
+            'rooftop': { label: 'Toit' },
+            'swimming': { label: 'Baignade' },
+            'cliff-jump': { label: 'Saut' },
+            'river': { label: 'Rivière' },
+            'viewpoint': { label: 'Point de vue' },
+            'camping': { label: 'Camping' },
+            'cave': { label: 'Grotte' },
+            'party': { label: 'Fête' },
+            'bbq': { label: 'BBQ' },
+            'picnic': { label: 'Pique-nique' },
+            'custom': { label: 'Autre' }
+        };
+        
+        const spotType = spotTypes[spot.type] || spotTypes.custom;
+        const weatherWarning = spot.access?.weatherSensitive 
+            ? '<div class="text-orange-500 text-sm mt-2">⚠️ Éviter par temps de pluie</div>' 
+            : '';
+        
+        const visitInfo = spot.metadata?.lastVisited 
+            ? `<div class="text-xs text-gray-500 mt-1">
+                Dernière visite: ${new Date(spot.metadata.lastVisited).toLocaleDateString('fr-FR')}
+               </div>`
+            : '';
+        
+        return `
+            <div class="p-3">
+                <div class="flex justify-between items-start mb-2">
+                    <h3 class="font-bold text-lg flex-1">${spot.name}</h3>
+                    <span class="text-xs bg-gray-200 px-2 py-1 rounded">${spotType.label}</span>
+                </div>
+                
+                ${spot.description ? `<p class="text-sm text-gray-600 mb-2">${spot.description}</p>` : ''}
+                
+                ${spot.access?.notes ? `
+                    <div class="bg-gray-100 p-2 rounded text-xs mb-2">
+                        <strong>Accès:</strong> ${spot.access.notes}
+                    </div>
+                ` : ''}
+                
+                ${weatherWarning}
+                
+                ${spot.access?.bestTime && spot.access.bestTime !== 'anytime' ? `
+                    <div class="text-sm mt-1">
+                        <strong>Meilleur moment:</strong> ${this.getBestTimeLabel(spot.access.bestTime)}
+                    </div>
+                ` : ''}
+                
+                ${spot.metadata?.tags?.length ? `
+                    <div class="flex flex-wrap gap-1 mt-2">
+                        ${spot.metadata.tags.map(tag => 
+                            `<span class="bg-gray-200 px-2 py-0.5 rounded text-xs">#${tag}</span>`
+                        ).join('')}
+                    </div>
+                ` : ''}
+                
+                <div class="flex justify-between items-center mt-3 pt-2 border-t">
+                    <div>
+                        <span class="text-xs text-gray-500">
+                            Ajouté ${this.getRelativeDate(spot.metadata.addedDate)}
+                        </span>
+                        ${visitInfo}
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="window.app?.markSpotVisited('${spot.id}')" 
+                            class="text-green-500 hover:text-green-700 text-sm" title="Marquer comme visité">
+                            ✓
+                        </button>
+                        <button onclick="window.app?.editSpot('${spot.id}')" 
+                            class="text-blue-500 hover:text-blue-700 text-sm" title="Modifier">
+                            ✏️
+                        </button>
+                        <button onclick="window.app?.deleteSpot('${spot.id}')" 
+                            class="text-red-500 hover:text-red-700 text-sm" title="Supprimer">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    /**
+     * Get best time label in French
+     * @private
+     */
+    getBestTimeLabel(time) {
+        const labels = {
+            'sunrise': 'Lever du soleil',
+            'morning': 'Matin',
+            'afternoon': 'Après-midi',
+            'sunset': 'Coucher du soleil',
+            'night': 'Nuit',
+            'anytime': 'N\'importe quand'
+        };
+        return labels[time] || time;
+    }
+    
+    /**
+     * Get relative date in French
+     * @private
+     */
+    getRelativeDate(dateString) {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffTime = Math.abs(now - date);
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 0) return 'aujourd\'hui';
+        if (diffDays === 1) return 'hier';
+        if (diffDays < 7) return `il y a ${diffDays} jours`;
+        if (diffDays < 30) return `il y a ${Math.floor(diffDays / 7)} semaines`;
+        if (diffDays < 365) return `il y a ${Math.floor(diffDays / 30)} mois`;
+        return `il y a ${Math.floor(diffDays / 365)} ans`;
+    }
+    
+    /**
+     * Remove custom spot marker
+     * @param {string} spotId - Spot ID
+     */
+    removeCustomSpotMarker(spotId) {
+        const marker = this.customSpotMarkers.get(spotId);
+        if (marker) {
+            this.customSpotsLayer.removeLayer(marker);
+            this.customSpotMarkers.delete(spotId);
+        }
+    }
+    
+    /**
+     * Update custom spot marker
+     * @param {Object} spot - Updated spot data
+     */
+    updateCustomSpotMarker(spot) {
+        this.removeCustomSpotMarker(spot.id);
+        this.addCustomSpotMarker(spot);
+    }
+    
+    /**
+     * Show/hide custom spots layer
+     * @param {boolean} show - Show or hide
+     */
+    toggleCustomSpots(show) {
+        if (this.customSpotsLayer) {
+            if (show) {
+                this.customSpotsLayer.addTo(this.map);
+            } else {
+                this.map.removeLayer(this.customSpotsLayer);
+            }
+        }
+    }
+    
+    /**
+     * Center map on spot
+     * @param {Object} spot - Spot to center on
+     * @param {number} zoom - Optional zoom level
+     */
+    centerOnSpot(spot, zoom = 15) {
+        this.map.setView([spot.coordinates.lat, spot.coordinates.lon], zoom);
+        
+        // Open popup if marker exists
+        const marker = this.customSpotMarkers.get(spot.id);
+        if (marker) {
+            setTimeout(() => marker.openPopup(), 300);
+        }
+    }
+    
+    /**
+     * Get bounds of all custom spots
+     * @returns {L.LatLngBounds|null} Bounds or null if no spots
+     */
+    getCustomSpotsBounds() {
+        if (!this.customSpotMarkers.size) return null;
+        
+        const bounds = L.latLngBounds();
+        this.customSpotMarkers.forEach(marker => {
+            bounds.extend(marker.getLatLng());
+        });
+        
+        return bounds;
+    }
+    
+    /**
+     * Fit map to show all custom spots
+     * @param {Object} options - Leaflet fitBounds options
+     */
+    fitToCustomSpots(options = {}) {
+        const bounds = this.getCustomSpotsBounds();
+        if (bounds) {
+            this.map.fitBounds(bounds, {
+                padding: [50, 50],
+                maxZoom: 12,
+                ...options
+            });
+        }
+    }
+    
+    /**
      * Clean up resources
      */
     destroy() {

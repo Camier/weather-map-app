@@ -13,6 +13,7 @@ import WeatherService from './weather-service.js';
 import UIStateManager from './ui-state-manager.js';
 import MapController from './map-controller.js';
 import ErrorMonitor, { WEATHER_ERROR_MESSAGES } from './error-monitor.js';
+import SpotManager from './spot-manager.js';
 
 class WeatherApp {
     constructor(config = {}) {
@@ -131,8 +132,14 @@ class WeatherApp {
             // Initialize map controller
             this.mapController = new MapController('map', this.config.mapOptions);
             
+            // Initialize spot manager
+            this.spotManager = new SpotManager();
+            
             // Set up inter-module communication
             this.setupEventHandlers();
+            
+            // Set up custom spots UI and load saved spots
+            this.setupSpotManagement();
             
             // Set up activities (doesn't require weather data)
             this.setupActivities();
@@ -711,6 +718,473 @@ class WeatherApp {
      */
     on(event, handler) {
         document.addEventListener(`weatherapp:${event}`, handler);
+    }
+    
+    /**
+     * Setup spot management UI and functionality
+     * @private
+     */
+    setupSpotManagement() {
+        // Add spot button
+        const addBtn = document.getElementById('add-spot-btn');
+        if (addBtn) {
+            addBtn.addEventListener('click', () => this.startSpotCreation());
+        }
+        
+        // Modal controls
+        const modal = document.getElementById('spot-modal');
+        const form = document.getElementById('spot-form');
+        const cancelBtn = document.getElementById('cancel-spot');
+        
+        if (form) {
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.saveNewSpot();
+            });
+        }
+        
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => this.cancelSpotCreation());
+        }
+        
+        // Populate spot types
+        this.populateSpotTypes();
+        
+        // Map click handler for spot creation
+        this.mapController.on('spotLocationSelected', (e) => {
+            this.showSpotModal(e.detail);
+        });
+        
+        // Custom spot click handler
+        this.mapController.on('customSpotClicked', (e) => {
+            this.handleCustomSpotClick(e.detail.spot);
+        });
+        
+        // Import/Export buttons
+        const mesSpotBtn = document.getElementById('btn-mes-spots');
+        const importExportBtn = document.getElementById('btn-import-export');
+        const exportBtn = document.getElementById('export-spots-btn');
+        const importBtn = document.getElementById('import-spots-btn');
+        const importFile = document.getElementById('import-file');
+        const closeImportExport = document.getElementById('close-import-export');
+        
+        if (mesSpotBtn) {
+            mesSpotBtn.addEventListener('click', () => this.showMySpots());
+        }
+        
+        if (importExportBtn) {
+            importExportBtn.addEventListener('click', () => {
+                document.getElementById('import-export-modal').classList.remove('hidden');
+            });
+        }
+        
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => this.exportSpots());
+        }
+        
+        if (importBtn && importFile) {
+            importBtn.addEventListener('click', async () => {
+                if (importFile.files.length > 0) {
+                    await this.importSpots(importFile.files[0]);
+                }
+            });
+        }
+        
+        if (closeImportExport) {
+            closeImportExport.addEventListener('click', () => {
+                document.getElementById('import-export-modal').classList.add('hidden');
+            });
+        }
+        
+        // Make functions available globally for popup buttons
+        window.app = this;
+        
+        // Load existing spots
+        this.loadCustomSpots();
+    }
+    
+    /**
+     * Populate spot type selector
+     * @private
+     */
+    populateSpotTypes() {
+        const grid = document.getElementById('spot-type-grid');
+        if (!grid) return;
+        
+        const spotTypes = [
+            { value: 'urbex', icon: '🏚️', label: 'Urbex' },
+            { value: 'warehouse', icon: '🏭', label: 'Entrepôt' },
+            { value: 'rooftop', icon: '🏢', label: 'Toit' },
+            { value: 'swimming', icon: '🏊', label: 'Baignade' },
+            { value: 'river', icon: '💧', label: 'Rivière' },
+            { value: 'viewpoint', icon: '👁️', label: 'Vue' },
+            { value: 'camping', icon: '⛺', label: 'Camping' },
+            { value: 'party', icon: '🎉', label: 'Fête' },
+            { value: 'cave', icon: '🕳️', label: 'Grotte' },
+            { value: 'forest', icon: '🌲', label: 'Forêt' },
+            { value: 'picnic', icon: '🧺', label: 'Pique-nique' },
+            { value: 'custom', icon: '📍', label: 'Autre' }
+        ];
+        
+        grid.innerHTML = spotTypes.map(type => `
+            <div class="spot-type-option">
+                <input type="radio" id="type-${type.value}" name="spot-type" 
+                    value="${type.value}" required>
+                <label for="type-${type.value}" class="cursor-pointer block">
+                    <div class="text-2xl mb-1">${type.icon}</div>
+                    <div class="text-xs">${type.label}</div>
+                </label>
+            </div>
+        `).join('');
+    }
+    
+    /**
+     * Start spot creation process
+     */
+    startSpotCreation() {
+        this.mapController.enableSpotCreation();
+        
+        // Show notification
+        this.uiState.showNotification(
+            'Clique sur la carte pour placer ton spot',
+            'info'
+        );
+    }
+    
+    /**
+     * Show spot creation modal
+     * @param {Object} location - {lat, lon}
+     */
+    showSpotModal(location) {
+        this.currentSpotLocation = location;
+        document.getElementById('spot-modal').classList.remove('hidden');
+        
+        // Reset form
+        document.getElementById('spot-form').reset();
+        
+        // Focus on name input
+        setTimeout(() => {
+            document.getElementById('spot-name').focus();
+        }, 100);
+    }
+    
+    /**
+     * Cancel spot creation
+     */
+    cancelSpotCreation() {
+        this.mapController.disableSpotCreation();
+        document.getElementById('spot-modal').classList.add('hidden');
+        this.currentSpotLocation = null;
+    }
+    
+    /**
+     * Save new spot
+     * @private
+     */
+    async saveNewSpot() {
+        const formData = {
+            name: document.getElementById('spot-name').value.trim(),
+            type: document.querySelector('input[name="spot-type"]:checked')?.value,
+            description: document.getElementById('spot-description').value.trim(),
+            coordinates: this.currentSpotLocation,
+            access: {
+                notes: document.getElementById('spot-access').value.trim(),
+                weatherSensitive: document.getElementById('weather-sensitive').checked,
+                bestTime: document.getElementById('best-time').value
+            },
+            metadata: {
+                tags: document.getElementById('spot-tags').value
+                    .split(',')
+                    .map(t => t.trim())
+                    .filter(t => t.length > 0)
+            }
+        };
+        
+        // Validate required fields
+        if (!formData.name || !formData.type) {
+            this.uiState.showNotification('Nom et type sont requis', 'error');
+            return;
+        }
+        
+        // Add the spot
+        const spot = this.spotManager.addSpot(formData);
+        
+        if (spot) {
+            // Add marker to map
+            this.mapController.addCustomSpotMarker(spot);
+            
+            // Check weather for the spot if weather sensitive
+            if (spot.access.weatherSensitive) {
+                await this.checkSpotWeather(spot);
+            }
+            
+            // Close modal
+            this.cancelSpotCreation();
+            
+            // Show success message
+            this.uiState.showNotification(
+                `Spot "${spot.name}" ajouté avec succès!`,
+                'success'
+            );
+            
+            // Center map on new spot
+            this.mapController.centerOnSpot(spot);
+        } else {
+            this.uiState.showNotification(
+                'Erreur lors de l\'ajout du spot',
+                'error'
+            );
+        }
+    }
+    
+    /**
+     * Load custom spots on startup
+     * @private
+     */
+    loadCustomSpots() {
+        const spots = this.spotManager.getAllSpots();
+        spots.forEach(spot => {
+            this.mapController.addCustomSpotMarker(spot);
+        });
+        
+        console.log(`WeatherApp: Loaded ${spots.length} custom spots`);
+        
+        // Check weather for sensitive spots
+        this.checkWeatherSensitiveSpots();
+    }
+    
+    /**
+     * Check weather for a specific spot
+     * @param {Object} spot - Spot to check
+     */
+    async checkSpotWeather(spot) {
+        if (!spot.access?.weatherSensitive) return;
+        
+        // Find nearest city
+        const nearestCity = this.findNearestCity(
+            spot.coordinates.lat,
+            spot.coordinates.lon
+        );
+        
+        if (!nearestCity) return;
+        
+        try {
+            // Get current weather data
+            const weatherData = this.uiState.weatherData;
+            if (!weatherData || !weatherData.previsions) return;
+            
+            const cityWeather = weatherData.previsions.find(p => 
+                p.nom === nearestCity.nom
+            );
+            
+            if (cityWeather && cityWeather.jours && cityWeather.jours[0]) {
+                const today = cityWeather.jours[0];
+                const isRainy = today.pluie && today.pluie > 0.5;
+                
+                if (isRainy) {
+                    this.uiState.showNotification(
+                        `⚠️ Pluie prévue près de "${spot.name}" - Évite ce spot aujourd'hui`,
+                        'warning'
+                    );
+                }
+            }
+        } catch (error) {
+            console.error('Failed to check spot weather:', error);
+        }
+    }
+    
+    /**
+     * Check all weather-sensitive spots
+     * @private
+     */
+    async checkWeatherSensitiveSpots() {
+        const sensitiveSpots = this.spotManager.getWeatherSensitiveSpots();
+        
+        for (const spot of sensitiveSpots) {
+            await this.checkSpotWeather(spot);
+        }
+    }
+    
+    /**
+     * Find nearest city to coordinates
+     * @private
+     */
+    findNearestCity(lat, lon) {
+        let nearest = null;
+        let minDistance = Infinity;
+        
+        this.config.cities.forEach(city => {
+            const distance = this.calculateDistance(lat, lon, city.lat, city.lon);
+            if (distance < minDistance) {
+                minDistance = distance;
+                nearest = city;
+            }
+        });
+        
+        return nearest;
+    }
+    
+    /**
+     * Calculate distance between two points
+     * @private
+     */
+    calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371; // Earth radius in km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    }
+    
+    /**
+     * Show my spots
+     */
+    showMySpots() {
+        const spots = this.spotManager.getAllSpots();
+        
+        if (spots.length === 0) {
+            this.uiState.showNotification(
+                'Aucun spot enregistré. Clique sur + pour ajouter!',
+                'info'
+            );
+            return;
+        }
+        
+        // Fit map to show all spots
+        this.mapController.fitToCustomSpots();
+        
+        // Show stats
+        const stats = this.spotManager.getStatistics();
+        this.uiState.showNotification(
+            `${stats.total} spots, ${stats.weatherSensitive} sensibles à la météo`,
+            'info'
+        );
+    }
+    
+    /**
+     * Export spots
+     */
+    exportSpots() {
+        const stats = this.spotManager.getStatistics();
+        
+        if (stats.total === 0) {
+            this.uiState.showNotification('Aucun spot à exporter', 'warning');
+            return;
+        }
+        
+        this.spotManager.exportAsFile('mes-spots-secrets');
+        this.uiState.showNotification(
+            `${stats.total} spots exportés avec succès!`,
+            'success'
+        );
+        
+        // Close modal
+        document.getElementById('import-export-modal').classList.add('hidden');
+    }
+    
+    /**
+     * Import spots from file
+     * @param {File} file - File to import
+     */
+    async importSpots(file) {
+        try {
+            const result = await this.spotManager.importFromFile(file);
+            
+            if (result.success) {
+                // Add markers for new spots
+                const spots = this.spotManager.getAllSpots();
+                spots.forEach(spot => {
+                    if (!this.mapController.customSpotMarkers?.has(spot.id)) {
+                        this.mapController.addCustomSpotMarker(spot);
+                    }
+                });
+                
+                this.uiState.showNotification(
+                    `${result.added} spots importés, ${result.skipped} ignorés (doublons)`,
+                    'success'
+                );
+                
+                // Fit map to show all spots
+                if (result.added > 0) {
+                    this.mapController.fitToCustomSpots();
+                }
+            } else {
+                this.uiState.showNotification(
+                    `Erreur d'import: ${result.error}`,
+                    'error'
+                );
+            }
+        } catch (error) {
+            console.error('Import error:', error);
+            this.uiState.showNotification(
+                'Erreur lors de l\'import du fichier',
+                'error'
+            );
+        }
+        
+        // Close modal and reset input
+        document.getElementById('import-export-modal').classList.add('hidden');
+        document.getElementById('import-file').value = '';
+    }
+    
+    /**
+     * Mark spot as visited
+     * @param {string} spotId - Spot ID
+     */
+    markSpotVisited(spotId) {
+        this.spotManager.markVisited(spotId);
+        const spot = this.spotManager.getAllSpots().find(s => s.id === spotId);
+        if (spot) {
+            this.mapController.updateCustomSpotMarker(spot);
+            this.uiState.showNotification(
+                `"${spot.name}" marqué comme visité!`,
+                'success'
+            );
+        }
+    }
+    
+    /**
+     * Edit spot (placeholder for future)
+     * @param {string} spotId - Spot ID
+     */
+    editSpot(spotId) {
+        // TODO: Implement edit functionality
+        this.uiState.showNotification(
+            'Fonction d\'édition à venir...',
+            'info'
+        );
+    }
+    
+    /**
+     * Delete spot
+     * @param {string} spotId - Spot ID
+     */
+    deleteSpot(spotId) {
+        const spot = this.spotManager.getAllSpots().find(s => s.id === spotId);
+        if (!spot) return;
+        
+        if (confirm(`Supprimer "${spot.name}" ?`)) {
+            const deleted = this.spotManager.deleteSpot(spotId);
+            if (deleted) {
+                this.mapController.removeCustomSpotMarker(spotId);
+                this.uiState.showNotification(
+                    `"${spot.name}" supprimé`,
+                    'success'
+                );
+            }
+        }
+    }
+    
+    /**
+     * Handle custom spot click
+     * @param {Object} spot - Clicked spot
+     */
+    handleCustomSpotClick(spot) {
+        // Could show detailed panel or navigate
+        console.log('Custom spot clicked:', spot);
     }
     
     /**
